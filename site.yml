@@ -1,0 +1,49 @@
+---
+- name: Launch GitLab Container
+  hosts: workshop_ansible_hosts
+  gather_facts: false
+  become: false
+  vars:
+    gitlab_image: docker.io/gitlab/gitlab-ce:latest
+    gitlab_vol_base_path: "/home/{{ ansible_user }}/gitlab"
+  tasks:
+
+    - name: Pull gitlab container image
+      containers.podman.podman_image:
+        name: "{{ gitlab_image }}"
+
+    # Give parameters basically based on official document
+    # see: https://docs.gitlab.com/ee/install/docker.html#install-gitlab-using-docker-engine
+    - name: Create gitlab container
+      containers.podman.podman_container:
+        name: demo_gitlab
+        image: "{{ gitlab_image }}"
+        state: stopped
+        restart_policy: always
+        ports:
+          - "10080:80"
+          - "10443:443"
+          - "10022:22"
+        volumes:
+          - "{{ gitlab_vol_base_path }}/config:/etc/gitlab:Z"
+          - "{{ gitlab_vol_base_path }}/logs:/var/log/gitlab:Z"
+          - "{{ gitlab_vol_base_path }}/data:/var/opt/gitlab:Z"
+        shm_size: 256m
+
+    - name: Generate systemd service unit file
+      containers.podman.podman_generate_systemd:
+        name: demo_gitlab
+        dest: ~/.config/systemd/user/
+
+    - name: Ensure the service is started and enabled
+      ansible.builtin.systemd:
+        scope: user
+        name: container-demo_gitlab
+        daemon_reload: true
+        state: started
+        enabled: true
+
+    - name: Ensure the service is running after logout
+      ansible.builtin.command:
+        cmd: loginctl enable-linger
+      changed_when: false
